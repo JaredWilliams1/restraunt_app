@@ -1,1 +1,3 @@
 .env
+# Ignore Mac Finder view metadata files
+.DS_Store
