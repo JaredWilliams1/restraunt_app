@@ -35,20 +35,17 @@ class Order {
 
  }
 
- let fs = require("fs");
+let fs = require("fs");
 const http = require("http");
 const path = require("path");
 const express = require("express");
 const bodyParser = require("body-parser"); /* To handle post parameters */
-//const morganLogger = require("morgan");
 const app = express();  /* app is a request handler function */
 
 require("dotenv").config({ path: path.resolve(__dirname, '.env') })
 
 const userName = process.env.MONGO_DB_USERNAME;
 const password = process.env.MONGO_DB_PASSWORD;
-console.log(userName);
-console.log(password);
 
 const databaseAndCollection = {db: process.env.MONGO_DB_NAME, collection:process.env.MONGO_COLLECTION};
 
@@ -116,8 +113,61 @@ process.stdin.on('readable', () => {
 async function insertOrder(newOrder) {
   try {
       const result = await client.db(databaseAndCollection.db).collection(databaseAndCollection.collection).insertOne(newOrder);
-      //const result = await collection.insertOne(newApplication);
       console.log(`Order entry created with id ${result.insertedId}`);
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
+
+async function queryNameOrTableNum(name, tableNum) {
+  try {
+      await client.connect();
+      if (name == null && tableNum == null) {
+        let filter = {name: name, tableNum: tableNum};
+      } else if (tableNum == null) {
+        let filter = {name: name};
+      } else if (name == null) {
+        let filter = {tableNum: tableNum};
+      } else {
+        let filter = {};
+      }
+      const result = await client.db(databaseAndCollection.db)
+                          .collection(databaseAndCollection.collection)
+                          .findOne(filter);
+      return result;
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
+
+async function queryTotal(totalThreshold) {
+  try {
+      await client.connect();
+      let filter = {total: { $gte: Number(totalThreshold)}};
+      console.log(filter);
+      const cursor = await client.db(databaseAndCollection.db)
+                          .collection(databaseAndCollection.collection)
+                          .find(filter);
+      const result = await cursor.toArray();
+      return result;
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
+
+async function removeAll() {
+  try {
+      await client.connect();
+      const result = await client.db(databaseAndCollection.db)
+      .collection(databaseAndCollection.collection)
+      .deleteMany({});
+      return result.deletedCount;
   } catch (e) {
       console.error(e);
   } finally {
@@ -184,24 +234,58 @@ app.post("/order", (request, response) => {
 app.post("/reviewOrder", (request, response) => { 
   (async () => {
     let variables = {}
-    let {tableNum} =  request.tableNum;
-    let foundApplication = await queryEmail(email);
-    if (foundApplication == null) {
+    let {name, tableNum} =  request.tableNum;
+    let foundOrder = await queryNameOrTableNum(name, tableNum);
+    if (foundOrder == null) {
       variables = {
         name: "NONE",
         tableNum: "NONE",
-        gpa: "NONE",
-        backgroundInformation: "NONE"
+        delivery: "NONE",
+        orderTable: "NONE"
       };
     } else {
       variables = {
-        name: foundApplication.name,
-        email: foundApplication.email,
-        gpa: foundApplication.gpa,
-        backgroundInformation: foundApplication.backgroundInformation
+        name: foundOrder.name,
+        tableNum: foundOrder.tableNum,
+        delivery: foundOrder.delivery,
+        orderTable: foundOrder.orderTable
       };
     }
-    response.render("applicationConfirmation", variables);
+    response.render("orderConfirmation", variables);
+  })();
+});
+
+app.get("/adminTotalQuery", (request, response) => { 
+  response.render("adminTotalQuery");
+});
+
+app.post("/adminTotalQuery", (request, response) => { 
+  (async () => {
+    let {total} =  request.body;
+    let foundOrders = await queryTotal(total);
+    console.log(foundOrders)
+    buildOrdersDisplay = ""
+    foundOrders.forEach((element) => {
+      buildOrdersDisplay += `<strong>Name: </strong>${element.name}<br><strong>Table Number: </strong>${element.tableNum}<br><strong>Delivery Method: </strong>${element.delivery}<br>${element.orderTable}<br><br>`;
+    });
+    const variables = {
+      buildOrdersDisplay: buildOrdersDisplay
+    };
+    response.render("adminTotalDisplay", variables);
+  })();
+});
+
+app.get("/adminRemove", (request, response) => { 
+  response.render("removeOrders");
+});
+
+app.post("/adminRemove", (request, response) => { 
+  (async () => {
+    let numberRemoved = await removeAll();
+    const variables = {
+      numberRemoved: numberRemoved
+    };
+    response.render("removalComplete", variables);
   })();
 });
  
